@@ -360,8 +360,9 @@ draw from the same distribution, not the same experiment on new hardware.
 **Impact on conclusions: none, given three disciplines already in place.**
 (1) All claims are mean +/- std over >= 5 seeds — device variation behaves
 like one more seed, and both GPU numbers fall inside or at the edge of the
-CPU seed distribution (no evidence of systematic bias). The 20/20
-attention-value-add result is device-insensitive. (2) Within-experiment
+CPU seed distribution (no evidence of systematic bias). The
+attention-value-add result is device-insensitive (20/20 when this was
+written; 30/30 after E9b). (2) Within-experiment
 device consistency — **with one slip, caught post-hoc**: E5-E7 and the E9
 grid ran on CPU, but the E9 winner validation silently ran on GPU (`fit`
 auto-selects CUDA, and the CUDA wheel had just been installed). Fixed in
