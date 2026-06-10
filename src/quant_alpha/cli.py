@@ -109,6 +109,27 @@ def dlt_equity_command(
     typer.echo(f"Packages: {info['load_packages']}")
 
 
+@app.command("gat-equity")
+def gat_equity_command(
+    config: Path = typer.Option(Path("configs/project.yaml"), help="Project config YAML."),
+    root: Path = typer.Option(Path("."), help="Project root."),
+    offline: bool = typer.Option(True, help="Use deterministic synthetic prices."),
+    epochs: int = typer.Option(50, help="GAT training epochs."),
+    loss: str = typer.Option("ic", help="Training loss: ic (default) or mse."),
+) -> None:
+    """Run the equity GAT relational-factor pipeline (requires the [gnn] extra)."""
+    from quant_alpha.run_gat_equity import run_gat_equity
+
+    out = run_gat_equity(config, root.resolve(), offline=offline, epochs=epochs, loss=loss)
+    gates = out["gate_report"]
+    typer.echo("GAT equity pipeline finished.")
+    typer.echo(f"Composite OOS IC mean: {gates['composite_oos_ic_mean']:.4f}")
+    typer.echo(f"Value-added : {gates['value_added']}")
+    typer.echo(f"Consistency : {gates['consistency']}")
+    typer.echo(f"Uniqueness  : {gates['uniqueness']}")
+    typer.echo(f"Robustness  : {gates['robustness']}")
+
+
 @app.command("bruin-lineage")
 def bruin_lineage_command(
     bruin_root: Path = typer.Option(Path("bruin"), help="Path to bruin/ directory."),

@@ -5,12 +5,103 @@ symbols:
   - AAPL
   - MSFT
   - NVDA
-  - AMZN
-  - META
+  - AVGO
+  - ORCL
+  - CRM
   - GOOGL
+  - META
+  - NFLX
+  - DIS
+  - TMUS
+  - AMZN
+  - TSLA
+  - HD
+  - MCD
+  - NKE
+  - PG
+  - KO
+  - PEP
+  - COST
+  - WMT
   - JPM
-  - XOM
+  - BAC
+  - WFC
+  - GS
+  - MS
   - UNH
-  - SPY
+  - JNJ
+  - LLY
+  - PFE
+  - ABBV
+  - MRK
+  - XOM
+  - CVX
+  - COP
+  - SLB
+  - EOG
+  - BA
+  - CAT
+  - GE
+  - HON
+  - UPS
+  - NEE
+  - DUK
+  - SO
+  - LIN
+  - FCX
+  - NEM
+  - AMT
+  - PLD
 benchmarks:
   - SPY
+sectors:
+  AAPL: Information Technology
+  MSFT: Information Technology
+  NVDA: Information Technology
+  AVGO: Information Technology
+  ORCL: Information Technology
+  CRM: Information Technology
+  GOOGL: Communication Services
+  META: Communication Services
+  NFLX: Communication Services
+  DIS: Communication Services
+  TMUS: Communication Services
+  AMZN: Consumer Discretionary
+  TSLA: Consumer Discretionary
+  HD: Consumer Discretionary
+  MCD: Consumer Discretionary
+  NKE: Consumer Discretionary
+  PG: Consumer Staples
+  KO: Consumer Staples
+  PEP: Consumer Staples
+  COST: Consumer Staples
+  WMT: Consumer Staples
+  JPM: Financials
+  BAC: Financials
+  WFC: Financials
+  GS: Financials
+  MS: Financials
+  UNH: Health Care
+  JNJ: Health Care
+  LLY: Health Care
+  PFE: Health Care
+  ABBV: Health Care
+  MRK: Health Care
+  XOM: Energy
+  CVX: Energy
+  COP: Energy
+  SLB: Energy
+  EOG: Energy
+  BA: Industrials
+  CAT: Industrials
+  GE: Industrials
+  HON: Industrials
+  UPS: Industrials
+  NEE: Utilities
+  DUK: Utilities
+  SO: Utilities
+  LIN: Materials
+  FCX: Materials
+  NEM: Materials
+  AMT: Real Estate
+  PLD: Real Estate

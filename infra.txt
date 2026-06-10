@@ -1,0 +1,362 @@
+digraph OPM_Model {
+    // =====================================================================
+    // OPM model of quant-alpha-foundation -- the FULL production framework.
+    //
+    // A Second-Foundation-inspired quant alpha platform built to the Data
+    // Engineering Zoomcamp syllabus: dual-track ingestion (equity + energy),
+    // data lake + warehouse (DuckDB local / GCS+BigQuery cloud), formulaic
+    // alpha factor engine, a GNN/GAT relational-factor extension (capstone),
+    // backtest + four research gates, dbt marts, Bruin asset lineage, batch
+    // (Spark) + streaming (Redpanda/RisingWave), a Streamlit research app,
+    // Kestra orchestration, and Terraform/Helm/K8s/CI infrastructure.
+    //
+    // OPM conventions
+    //   Object  (data / resource)        -> blue rounded box
+    //   Process (transformation)         -> green oval
+    //   Agent   (control / orchestration)-> red rounded box
+    //   External / Deferred              -> grey, dashed
+    //   solid edge  : procedural link (consumed by / yields)
+    //   dotted edge : effect / influence
+    //   dashed edge : agent control, orchestration, governance, infra, deferred
+    //
+    // Reusable reference architecture. Mirrors README.md, docs/architecture.md,
+    // docs/zoomcamp_coverage.md, docs/alpha_research.md, and docs/adr/0001..0005.
+    // =====================================================================
+
+    rankdir=TB;
+    nodesep=0.4;
+    ranksep=0.55;
+    splines=true;
+    compound=true;
+    background="transparent";
+    node [fontname="Helvetica,Arial,sans-serif", fontsize=10, labelloc="c", margin="0.16,0.07"];
+    edge [fontname="Helvetica,Arial,sans-serif", fontsize=9, color="#4A5568",
+          fontcolor="#4A5568", arrowsize=0.75, penwidth=1.1];
+
+    // ------------------------------------------------------------------ //
+    // External sources
+    // ------------------------------------------------------------------ //
+    subgraph cluster_sources {
+        label="External Sources"; style="rounded,dashed"; color="#CBD5E0"; fontcolor="#718096";
+        node [shape=box, style="rounded,filled", fillcolor="#F7FAFC", color="#A0AEC0", fontcolor="#4A5568", penwidth=1.3];
+        yahoo_finance [label="Yahoo Finance\n(equity OHLCV)"];
+        entsoe_api    [label="ENTSO-E API\n(power market)"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Ingestion (Workshop 1: dlt)
+    // ------------------------------------------------------------------ //
+    subgraph cluster_ingest {
+        label="Ingestion"; style="rounded"; color="#90CDF4"; fontcolor="#2B6CB0";
+        node [shape=oval, style=filled, fillcolor="#E6FFFA", color="#234E52", fontcolor="#1D4044", penwidth=1.4];
+        ingest_equity [label="Equity Ingestion\n(yahoo / synthetic)"];
+        ingest_energy [label="Energy Ingestion\n(entsoe / synthetic)"];
+        dlt_ingest    [label="dlt Incremental Ingestion\n(@source, cursor state)"];
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D"];
+        raw_equity [label="Raw Equity OHLCV"];
+        raw_power  [label="Raw Power Market"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Storage: data lake + warehouse (M3)
+    // ------------------------------------------------------------------ //
+    subgraph cluster_storage {
+        label="Data Lake & Warehouse"; style="rounded"; color="#90CDF4"; fontcolor="#2B6CB0";
+        node [shape=oval, style=filled, fillcolor="#E6FFFA", color="#234E52", fontcolor="#1D4044", penwidth=1.4];
+        load_warehouse [label="Warehouse Load\n(storage.duckdb / gcp)"];
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D"];
+        raw_parquet [label="Raw Parquet\n(data lake, immutable)"];
+        duckdb      [label="DuckDB Warehouse\n[local]"];
+        gcs_lake    [label="GCS Lake\n[cloud Parquet]"];
+        bigquery    [label="BigQuery\n[raw / staging / marts]"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Factor transformation (alpha engine + Spark batch M6)
+    // ------------------------------------------------------------------ //
+    subgraph cluster_factors {
+        label="Factor Transformation"; style="rounded"; color="#90CDF4"; fontcolor="#2B6CB0";
+        node [shape=oval, style=filled, fillcolor="#E6FFFA", color="#234E52", fontcolor="#1D4044", penwidth=1.4];
+        alpha_compute_equity [label="Equity Alpha Computation\n(10 formulaic alphas)"];
+        alpha_compute_energy [label="Energy Alpha Computation\n(8 expression alphas)"];
+        spark_batch          [label="Spark Batch Features\n(7 rolling, window fns)"];
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D"];
+        alpha_panel     [label="Equity Alpha Panel\nisland alphas + _rank\n[(date, symbol)]"];
+        energy_features [label="Energy Feature Panel\n[(timestamp, market)]"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // GNN relational extension (the capstone) -- equity live, energy deferred
+    // ------------------------------------------------------------------ //
+    subgraph cluster_gnn {
+        label="GNN Relational Extension (capstone)"; style="rounded"; color="#38B2AC"; fontcolor="#234E52";
+        node [shape=oval, style=filled, fillcolor="#E6FFFA", color="#234E52", fontcolor="#1D4044", penwidth=1.4];
+        graph_construction [label="Graph Construction\n(sector + corr top-k)"];
+        label_construction [label="Label Construction\n(cross_sectional_label)"];
+        section_building   [label="Section Building\n(median-fill)"];
+        gat_training       [label="GAT Training\n(MSE -> IC loss)"];
+        gat_inference      [label="GAT Inference\n(propagate seam)"];
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D"];
+        equity_topology [label="Equity Topology\n[static, history-only]"];
+        cs_label        [label="CS Label\nforward_return(t+k)\n[label only]"];
+        graph_snapshots [label="Graph Snapshots"];
+        gat_model       [label="GAT Model\n[state: trained]"];
+        composite_alpha [label="Relational Composite Alpha"];
+        node [shape=box, style="rounded,filled", fillcolor="#FFF5F5", color="#9B2C2C", fontcolor="#742A2A"];
+        leakage_control [label="Leakage Control\nwalk-forward + embargo (>= k)"];
+        node [shape=box, style="rounded,filled,dashed", fillcolor="#F7FAFC", color="#A0AEC0", fontcolor="#718096"];
+        energy_gnn [label="Energy GNN Track\n[deferred]"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Backtest & four research gates
+    // ------------------------------------------------------------------ //
+    subgraph cluster_research {
+        label="Backtest & Research Gates"; style="rounded"; color="#90CDF4"; fontcolor="#2B6CB0";
+        node [shape=oval, style=filled, fillcolor="#E6FFFA", color="#234E52", fontcolor="#1D4044", penwidth=1.4];
+        backtest   [label="Long-Short Backtest\n(walk-forward IC)"];
+        alpha_decay [label="Alpha Decay\n(multi-horizon IC)"];
+        evaluation [label="Four Gates\nRobustness / Uniqueness /\nValue-added / Consistency"];
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D"];
+        factor_matrix   [label="Factor Matrix\nisland + composite"];
+        analysis_report [label="Research Report\n(diagnostics, decay,\ncorrelation, value-added)"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Analytics engineering (dbt M4)
+    // ------------------------------------------------------------------ //
+    subgraph cluster_marts {
+        label="Analytics Engineering (dbt)"; style="rounded"; color="#90CDF4"; fontcolor="#2B6CB0";
+        node [shape=oval, style=filled, fillcolor="#E6FFFA", color="#234E52", fontcolor="#1D4044", penwidth=1.4];
+        dbt_build [label="dbt Build\n(staging -> marts,\nschema tests)"];
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D"];
+        marts [label="Curated Marts\nequity 10 + energy 9 models"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Data platform & governance (M5: Bruin, contracts, quality)
+    // ------------------------------------------------------------------ //
+    subgraph cluster_platform {
+        label="Data Platform & Governance"; style="rounded,dashed"; color="#FBB6B6"; fontcolor="#9B2C2C";
+        node [shape=box, style="rounded,filled", fillcolor="#FFF5F5", color="#9B2C2C", fontcolor="#742A2A", penwidth=1.4];
+        bruin          [label="Bruin Asset Graph\nraw->stg->fct->rpt\n(topological run, lineage)"];
+        data_contracts [label="Data Contracts\n(DatasetContract registry)"];
+        node [shape=oval, style=filled, fillcolor="#E6FFFA", color="#234E52", fontcolor="#1D4044", penwidth=1.4];
+        quality_checks [label="Quality Checks\n(pk / non-null / ranges)"];
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D"];
+        quality_results [label="Quality Results\n(power_market_quality)"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Streaming (M7 Redpanda + Workshop 2 RisingWave)
+    // ------------------------------------------------------------------ //
+    subgraph cluster_stream {
+        label="Streaming (intraday)"; style="rounded"; color="#90CDF4"; fontcolor="#2B6CB0";
+        node [shape=oval, style=filled, fillcolor="#E6FFFA", color="#234E52", fontcolor="#1D4044", penwidth=1.4];
+        redpanda_producer [label="Redpanda Producer\n(Avro)"];
+        redpanda_consumer [label="Redpanda Consumer"];
+        risingwave_views  [label="RisingWave MViews\n(window->momentum->spread\n->scores->alerts)"];
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D"];
+        signals_topic [label="energy-signals topic\n(Avro schema)"];
+        live_signals  [label="live_energy_signals\n(DuckDB)"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Research application
+    // ------------------------------------------------------------------ //
+    subgraph cluster_serving {
+        label="Research Application"; style="rounded"; color="#90CDF4"; fontcolor="#2B6CB0";
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D"];
+        dashboard [label="Streamlit Dashboard\n7 pages; DuckDB / BigQuery backend"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Orchestration (M2: Kestra)
+    // ------------------------------------------------------------------ //
+    subgraph cluster_orch {
+        label="Orchestration"; style="rounded,dashed"; color="#FBB6B6"; fontcolor="#9B2C2C";
+        node [shape=box, style="rounded,filled", fillcolor="#FFF5F5", color="#9B2C2C", fontcolor="#742A2A", penwidth=1.4];
+        kestra [label="Kestra (5 flows)\ndaily equity / hourly energy /\ndlt / bruin / RW init"];
+    }
+
+    // ------------------------------------------------------------------ //
+    // Infrastructure & ops (M1 + Cloud/K8s + CI/CD)
+    // ------------------------------------------------------------------ //
+    subgraph cluster_infra {
+        label="Infrastructure & Ops"; style="rounded,dashed"; color="#FBB6B6"; fontcolor="#9B2C2C";
+        node [shape=box, style="rounded,filled", fillcolor="#FFF5F5", color="#9B2C2C", fontcolor="#742A2A", penwidth=1.4];
+        ci                [label="GitHub Actions CI\n(7-stage: lint/test/dlt/dbt/\nhelm/terraform/docker/trivy)"];
+        docker            [label="Docker / Compose"];
+        artifact_registry [label="Artifact Registry\n(images)"];
+        k8s               [label="Kubernetes + Helm\n(CronJobs, HPA, PVC,\nDeployment)"];
+        terraform         [label="Terraform\n(GCS / BQ / GKE / AR)"];
+        workload_identity [label="Workload Identity\n+ Secret Manager\n(keyless auth)"];
+    }
+
+    // ================================================================== //
+    // Procedural links (solid): consumed by / yields
+    // ================================================================== //
+    yahoo_finance -> ingest_equity [label="consumed by"];
+    entsoe_api -> ingest_energy    [label="consumed by"];
+    yahoo_finance -> dlt_ingest    [label="consumed by"];
+    entsoe_api -> dlt_ingest       [label="consumed by"];
+    ingest_equity -> raw_equity    [label="yields"];
+    ingest_energy -> raw_power     [label="yields"];
+    dlt_ingest -> raw_equity       [label="incremental"];
+    dlt_ingest -> raw_power        [label="incremental"];
+
+    // Lake + warehouse
+    raw_equity -> raw_parquet [label="persisted"];
+    raw_power -> raw_parquet  [label="persisted"];
+    raw_equity -> load_warehouse [label="consumed by"];
+    raw_power -> load_warehouse  [label="consumed by"];
+    load_warehouse -> duckdb     [label="yields"];
+    raw_parquet -> gcs_lake      [label="uploaded"];
+    gcs_lake -> bigquery         [label="load job"];
+
+    // Factors
+    raw_equity -> alpha_compute_equity [label="consumed by"];
+    alpha_compute_equity -> alpha_panel [label="yields"];
+    raw_power -> alpha_compute_energy  [label="consumed by"];
+    alpha_compute_energy -> energy_features [label="yields"];
+    raw_power -> spark_batch [label="consumed by"];
+    spark_batch -> energy_features [label="enriches"];
+    alpha_panel -> duckdb [label="written"];
+    energy_features -> duckdb [label="written"];
+
+    // GNN extension (equity)
+    alpha_panel -> graph_construction [label="consumed by"];
+    graph_construction -> equity_topology [label="yields"];
+    alpha_panel -> label_construction [label="consumed by"];
+    label_construction -> cs_label [label="yields"];
+    alpha_panel -> section_building [label="node features"];
+    equity_topology -> section_building [label="consumed by"];
+    cs_label -> section_building [label="consumed by"];
+    section_building -> graph_snapshots [label="yields"];
+    graph_snapshots -> gat_training [label="consumed by"];
+    gat_training -> gat_model [label="yields"];
+    gat_model -> gat_inference [label="instrument"];
+    graph_snapshots -> gat_inference [label="consumed by"];
+    gat_inference -> composite_alpha [label="yields"];
+
+    // Backtest & gates
+    alpha_panel -> factor_matrix [label="island alphas"];
+    composite_alpha -> factor_matrix [label="merged into"];
+    factor_matrix -> backtest [label="consumed by"];
+    factor_matrix -> alpha_decay [label="consumed by"];
+    backtest -> evaluation [label="feeds"];
+    factor_matrix -> evaluation [label="consumed by"];
+    alpha_decay -> analysis_report [label="feeds"];
+    evaluation -> analysis_report [label="yields"];
+    analysis_report -> duckdb [label="written"];
+
+    // dbt marts
+    duckdb -> dbt_build [label="consumed by"];
+    dbt_build -> marts [label="yields"];
+    marts -> bigquery [label="materialised"];
+
+    // Quality
+    raw_power -> quality_checks [label="consumed by"];
+    quality_checks -> quality_results [label="yields"];
+    quality_results -> duckdb [label="written"];
+    quality_results -> marts [label="quality mart"];
+
+    // Streaming
+    energy_features -> redpanda_producer [label="consumed by"];
+    redpanda_producer -> signals_topic [label="yields"];
+    signals_topic -> redpanda_consumer [label="consumed by"];
+    signals_topic -> risingwave_views [label="consumed by"];
+    redpanda_consumer -> live_signals [label="yields"];
+
+    // Serving
+    marts -> dashboard [label="consumed by"];
+    analysis_report -> dashboard [label="consumed by"];
+    duckdb -> dashboard [label="local backend"];
+    bigquery -> dashboard [label="cloud backend"];
+    live_signals -> dashboard [label="live signals"];
+    risingwave_views -> dashboard [label="live view"];
+
+    // ================================================================== //
+    // Effect / influence (dotted)
+    // ================================================================== //
+    edge [style=dotted, color="#4A5568", fontcolor="#4A5568"];
+    composite_alpha -> evaluation [label="value-added vs best single"];
+
+    // ================================================================== //
+    // Agent control: leakage discipline (dashed, dark red)
+    // ================================================================== //
+    edge [style=dashed, color="#9B2C2C", fontcolor="#9B2C2C"];
+    leakage_control -> graph_construction [label="history-only window"];
+    leakage_control -> label_construction [label="t+k label only"];
+    leakage_control -> gat_training [label="walk-forward + embargo"];
+
+    // ================================================================== //
+    // Agent control: governance -- Bruin lineage + contracts (dashed)
+    // ================================================================== //
+    edge [style=dashed, color="#C53030", fontcolor="#C53030"];
+    bruin -> alpha_compute_equity [label="asset run"];
+    bruin -> alpha_compute_energy [label="asset run"];
+    bruin -> evaluation [label="fct_diagnostics"];
+    bruin -> backtest [label="rpt_summary"];
+    data_contracts -> quality_checks [label="defines"];
+    data_contracts -> dbt_build [label="schema tests"];
+
+    // ================================================================== //
+    // Agent control: orchestration scheduling (dashed, orange)
+    // ================================================================== //
+    edge [style=dashed, color="#DD6B20", fontcolor="#DD6B20"];
+    kestra -> alpha_compute_equity [label="daily 22:00"];
+    kestra -> alpha_compute_energy [label="hourly"];
+    kestra -> dlt_ingest [label="schedules"];
+    kestra -> bruin [label="flow trigger"];
+    kestra -> risingwave_views [label="daily init"];
+    kestra -> gat_training [label="retrain"];
+
+    // ================================================================== //
+    // Infrastructure & ops (dashed, grey)
+    // ================================================================== //
+    edge [style=dashed, color="#718096", fontcolor="#718096"];
+    ci -> docker [label="build & test"];
+    ci -> dbt_build [label="dbt smoke"];
+    ci -> kestra [label="register flows"];
+    docker -> artifact_registry [label="push"];
+    artifact_registry -> k8s [label="pull images"];
+    terraform -> gcs_lake [label="provisions"];
+    terraform -> bigquery [label="provisions"];
+    terraform -> artifact_registry [label="provisions"];
+    terraform -> k8s [label="provisions GKE"];
+    terraform -> workload_identity [label="provisions"];
+    workload_identity -> k8s [label="keyless auth"];
+    workload_identity -> ci [label="OIDC"];
+    k8s -> kestra [label="hosts"];
+    k8s -> dashboard [label="hosts"];
+    k8s -> alpha_compute_equity [label="equity CronJob (weekday)"];
+    k8s -> alpha_compute_energy [label="energy CronJob (hourly)"];
+
+    // ================================================================== //
+    // Deferred extension: energy GNN reuses the same seams (dashed, faded)
+    // ================================================================== //
+    edge [style=dashed, color="#A0AEC0", fontcolor="#A0AEC0"];
+    energy_features -> energy_gnn [label="future node features"];
+    graph_construction -> energy_gnn [label="needs edges_energy"];
+    label_construction -> energy_gnn [label="needs hourly label"];
+
+    // ================================================================== //
+    // Legend
+    // ================================================================== //
+    subgraph cluster_legend {
+        label="Legend (OPM)"; style="rounded"; color="#CBD5E0"; fontcolor="#4A5568"; fontsize=11;
+        node [shape=box, style="rounded,filled", fillcolor="#EBF8FF", color="#2B6CB0", fontcolor="#1A365D", penwidth=1.3];
+        L_object [label="Object (data / resource)"];
+        node [shape=oval, style=filled, fillcolor="#E6FFFA", color="#234E52", fontcolor="#1D4044"];
+        L_process [label="Process (transformation)"];
+        node [shape=box, style="rounded,filled", fillcolor="#FFF5F5", color="#9B2C2C", fontcolor="#742A2A"];
+        L_agent [label="Agent (control / orchestration)"];
+        node [shape=box, style="rounded,filled,dashed", fillcolor="#F7FAFC", color="#A0AEC0", fontcolor="#718096"];
+        L_deferred [label="External / Deferred"];
+
+        L_object -> L_process [label="consumed by / yields", style=solid, color="#4A5568", fontcolor="#4A5568"];
+        L_process -> L_agent [label="influence (dotted)", style=dotted, color="#4A5568", fontcolor="#4A5568"];
+        L_agent -> L_deferred [label="control / infra (dashed)", style=dashed, color="#9B2C2C", fontcolor="#9B2C2C"];
+    }
+}

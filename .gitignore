@@ -28,3 +28,7 @@ dbt_*/.user.yml
 node_modules/
 .idea/
 .vscode/
+
+# local agent workspaces
+.codegraph/
+.scratch/

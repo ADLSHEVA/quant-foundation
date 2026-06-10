@@ -61,6 +61,7 @@ class Universe(BaseModel):
     asset_class: str = "equities"
     symbols: list[str]
     benchmarks: list[str] = Field(default_factory=list)
+    sectors: dict[str, str] = Field(default_factory=dict)
 
 
 def load_yaml(path: Path) -> dict[str, Any]:

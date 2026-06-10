@@ -30,6 +30,10 @@ dbt = [
 ml = [
     "scikit-learn>=1.4.0",
 ]
+gnn = [
+    "torch>=2.2.0",
+    "torch-geometric>=2.5.0",
+]
 batch = [
     "pyspark>=3.5.0",
 ]
