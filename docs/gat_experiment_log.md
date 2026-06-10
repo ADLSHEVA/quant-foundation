@@ -10,6 +10,34 @@ _Maintained chronologically; never rewrite an entry — append corrections._
 
 ---
 
+## Paper evidence map
+
+Every claim the paper can make, with the experiment that supports it and the
+artifact to cite. Update this table as entries land; a claim without a row
+here is not yet supported.
+
+| # | Claim | Evidence | Artifacts |
+|---|---|---|---|
+| C1 | The pipeline is leakage-safe and produces no false positives | E1 (synthetic negative control: four gates correctly find nothing on random walks) + E3 (automated shuffle-label negative control AND planted-signal positive control, both losses) + E2 (split protocol: one split date, valid inside IS, embargo both sides) | `tests/test_leakage.py`, ADR-0003 + amendment |
+| C2 | IC loss is the right training objective: it directly optimises the evaluation metric and recovers signal far better than MSE (0.99 vs 0.33 planted-signal IC), at lr 1e-3 | E4 probe table | E4 entry; `LOSSES` in `run_gat_equity.py` |
+| C3 | **Core thesis: learned attention adds value over naive relational propagation.** Same inputs, same topology: GAT beats the uniform-mean anchor in every E6 cell AND in **20/20 seeded runs across two HP configs** (+0.69 to +3.00 OOS Sharpe), with scores near-uncorrelated with the anchor (Spearman -0.29..-0.14) — it learns structure, not smoothing. Both no-learning anchors are negative OOS | E6 (all cells) + E7 + E9 (all seeds) | `2026-06-10_matrix_summary.json`, `..._seed_sensitivity.csv`, `..._winner_validation.csv` |
+| C4 | The relational composite is a real, unique, consistent signal: passes Uniqueness (max corr vs singles 0.26) and, with walk-forward, Consistency + Robustness — 3/4 gates | E5, E6 (static_wf) | matrix diagnostics CSVs |
+| C5 | Honest negative: it does not (yet) beat the best single island alpha (the strictest Value-added bar); best config narrows the gap from -2.03 to -1.12 Sharpe while beating 9 of 10 singles | E5, E6 | gate reports in summary JSON |
+| C6 | **Negative result: dynamic per-snapshot correlation graphs hurt** — per-date correlation estimates are noisy; the frozen train-period graph acts as a regulariser. Walk-forward retraining improves the mean in **both** paired comparisons (default config 1.15 vs 0.73; winner config 1.30 vs 1.03 Sharpe; IC likewise) but per-comparison significance at n=5 is out of reach — claim "directionally helpful, consistent across configs" | E6 2x2 ablation + E7 + E9 | E6/E7/E9 entries + artifacts |
+| C7 | Model selection by valid IC matters in practice: valid IC peaked at epoch 32 (0.0756) then decayed to 0.0418 — best-epoch checkpointing nearly doubled deployed valid IC on the first real run | E5 training curve | E5 entry |
+| C8 | Single-seed point estimates are not paper-grade: across 5 seeds OOS Sharpe spans 0.36-1.04 (single) and 0.13-1.95 (WF); same seed on a different device also diverges (E8). All headline numbers are reported as mean +/- std over >= 5 seeds; the long-short Sharpe is far more seed-stable in sign than the rank-IC | E7, E8 | `2026-06-10_seed_sensitivity.csv` |
+| C9 | **The evaluation protocol is self-validating**: HPs selected purely on the IS-internal valid IC transferred to OOS (winner improves mean OOS IC and Sharpe over the default in both arms) — model selection never touched the OOS window, yet found a config that generalises | E9 | `2026-06-10_hp_grid_valid_ic.csv` + `..._winner_validation.csv` |
+| C10 | The HP surface is flat near the top (six configs within 0.10-0.115 valid IC); the only structural requirement is **2 GAT layers** (all top-6). Results are robust to reasonable HP choices — a robustness point, and a caution against HP-tuning theatre | E9 grid | `2026-06-10_hp_grid_valid_ic.csv` |
+
+**Suggested paper narrative order** (each step cites the rows above):
+methods & seams (ADRs) -> evaluation protocol & leakage controls (C1, C7) ->
+training objective (C2) -> main A/B result (C3) -> gates & honest reading
+(C4, C5) -> ablation & negative results (C6) -> robustness & variance (C8)
+-> limitations (E5 list + static-graph in-sample lookahead) -> future work
+(gate variants, attention story, energy track).
+
+---
+
 ## E1 — Synthetic negative control (2026-06, MSE loss)
 
 **Setup.** 50 synthetic random-walk names (`generate_synthetic_prices`),
@@ -188,17 +216,197 @@ Composite OOS IC mean 0.0066, OOS IC IR 0.025, OOS Sharpe 1.42.
 
 ---
 
+## E6 — 2x2 ablation: graph x retraining, with A/B anchors (2026-06-10)
+
+**Question.** E5's valid->OOS IC decay had two candidate causes: stale graph
+(frozen at the split date) or stale model (one training run). The 2x2
+matrix {static, dynamic graph} x {single fit, walk-forward refit} attributes
+the decay; every run also carries the two no-learning anchors
+(`alpha_island_mean` = equal-weight composite of the same inputs, no
+propagation; `alpha_uniform_composite` = uniform neighbour averaging of that
+composite over the same topology the GAT uses).
+
+**Setup.** One yfinance fetch (2021-01-01 → 2026-06-10, **all 50 names**
+this time, 1,364 dates, 68,200 rows; panel pickled for reuse), identical
+split/loss(IC)/epochs(50)/`torch.manual_seed(0)` across runs; walk-forward
+refits every 63 snapshots. Script `.scratch/run_matrix.py`; per-run
+diagnostics + summary JSON in `docs/results/2026-06-10_matrix_*`.
+
+**Results** (gates: Value-added / Consistency / Uniqueness / Robustness;
+`att_va` = GAT OOS Sharpe minus uniform-anchor OOS Sharpe):
+
+| run | OOS IC | OOS Sharpe | gates V/C/U/R | att_va | runtime |
+|---|---|---|---|---|---|
+| static + single | -0.0051 | 1.04 | F/F/T/T | +2.09 | 179s |
+| dynamic + single | -0.0348 | -1.01 | F/F/T/T | +0.18 | 207s |
+| **static + walk-forward** | **+0.0200** | **1.95** | **F/T/T/T** | **+3.00** | 939s |
+| dynamic + walk-forward | +0.0007 | 0.05 | F/T/T/T | +1.24 | 965s |
+
+Anchors (identical across same-graph runs): island mean OOS IC -0.0225,
+Sharpe -2.13; uniform composite OOS Sharpe -1.05 (static graph) / -1.19
+(dynamic). Best single stays `alpha_wq_010_gap_quality` at OOS Sharpe 3.07.
+GAT-vs-uniform Spearman is low and negative everywhere (-0.29 … -0.14).
+
+**Findings.**
+
+1. **Walk-forward retraining is the lever, not the dynamic graph.** The
+   decay was *model* staleness: static+WF lifts OOS IC from -0.005 to +0.020
+   and OOS Sharpe from 1.04 to 1.95, and Consistency flips to PASS (3/4
+   gates). Hypothesis (a) from E5 is rejected as implemented: the
+   per-snapshot correlation graph *hurts* in both arms — per-date correlation
+   estimates are noisy, and the frozen train-period graph acts as a
+   regulariser. (Refinements that might rescue dynamic graphs — longer
+   windows, shrinkage, slower rebuild cadence — are future work, not
+   currently planned.)
+2. **The attention A/B — the capstone's core claim — is positive in every
+   cell.** Both no-learning anchors are clearly negative OOS while the GAT is
+   positive in 3 of 4 runs; attention adds +2.1 to +3.0 OOS Sharpe over
+   uniform averaging on the *same* topology with the *same* inputs, and its
+   scores are nearly uncorrelated with the uniform baseline (it is not just
+   learning to smooth). "Relational learning beats naive relational
+   averaging" holds regardless of which cell you read.
+3. **Run-to-run variance is material — treat all point estimates as
+   provisional.** static+single here reads -0.0051/1.04 vs E5's
+   +0.0066/1.42 on a near-identical panel (deltas: ORCL restored, explicit
+   seed 0 vs unseeded E5). Single-seed numbers cannot support paper claims;
+   seed sensitivity (E7) must qualify every headline.
+4. Value-added still fails in all cells against the strict max-of-singles
+   bar, but static+WF narrows the gap to -1.12 (from -2.03).
+
+**Current best config:** static graph + IC loss + walk-forward refits.
+
+---
+
+## E7 — Seed sensitivity, 5 seeds x {static_single, static_wf} (2026-06-10)
+
+**Setup.** Same pickled E6 panel (only the torch seed varies), epochs 50,
+IC loss, oos_chunk 63, seeds 0-4. Script `.scratch/run_seeds.py`; per-run
+rows in `docs/results/2026-06-10_seed_sensitivity.csv`.
+
+| arm | OOS IC (mean +/- std) | OOS Sharpe | attention value-add |
+|---|---|---|---|
+| static_single | -0.0009 +/- 0.0045 | 0.73 +/- 0.25 | 1.78 +/- 0.25 |
+| static_wf | 0.0055 +/- 0.0147 | 1.15 +/- 0.75 | 2.20 +/- 0.75 |
+
+Per-seed OOS Sharpe — single: 1.04, 0.67, 0.75, 0.83, 0.36;
+walk-forward: 1.95, 1.81, 0.13, 0.84, 1.04 (seed 2 is a bad draw).
+
+**Findings — several E6 headlines must be qualified.**
+
+1. **The core claim survives intact and is now the strongest result:
+   attention value-add over the uniform anchor is positive in 10 of 10 runs**
+   (range +1.18 to +3.00 Sharpe). The uniform anchor is seed-independent
+   (-1.05), so this is the GAT clearing a fixed negative bar in every draw.
+   Likewise OOS Sharpe itself is positive in 10/10 runs (0.13-1.95).
+2. **Walk-forward's advantage is suggestive, not conclusive.** Mean Sharpe
+   1.15 vs 0.73 and mean IC +0.0055 vs -0.0009 favour WF, but the
+   distributions overlap (Welch t ~ 1.2 on 5 seeds) and WF's variance is 3x
+   single's. E6's "walk-forward is the lever" was a seed-0 read (1.95 was
+   the luckiest WF draw); the honest paper claim is "walk-forward improves
+   the mean but adds variance; not significant at n=5".
+3. **The composite's rank-IC is fragile** (single-arm mean ~0) **while its
+   long-short Sharpe is consistently positive** — the signal lives in the
+   tails (top/bottom quantile selection) more than in the full
+   cross-sectional ranking. Worth a paper paragraph: IC and L/S Sharpe
+   measure different things and disagree here.
+4. Paper protocol fixed by this entry: every headline number from now on is
+   reported as mean +/- std over >= 5 seeds; single-run numbers (E5, E6) are
+   retained as records but cited only with this caveat.
+
+---
+
+## E8 — Hardware note: GPU is a net loss at this graph size (2026-06-10)
+
+Swapped `torch 2.12.0+cpu` -> `+cu126` (RTX 4060 Laptop 8GB, driver CUDA
+12.6); pre-moved all dataset tensors to device once (`_dataset_to_device`)
+so per-snapshot host->device transfers are not the bottleneck. Benchmark on
+the E6 panel, seed 0, identical configs (`.scratch/bench_gpu.py`):
+
+| arm | CPU (E7) | GPU | delta |
+|---|---|---|---|
+| static_single | 180s | 223s | +24% slower |
+| static_wf | 955s | 1260s | +32% slower |
+
+**Reading.** A 50-node, 10-feature snapshot graph is latency-bound: each
+training step is dozens of microsecond-scale kernels, so GPU launch overhead
+dominates and the 4060's throughput never engages. Decisions: (1) production
+runs stay on CPU at the current universe size; (2) throughput for grids
+comes from **process parallelism** (32 logical cores; ~180s per single run);
+(3) the GPU becomes worthwhile only with a batched implementation (PyG
+`Batch` packing ~950 snapshots/epoch into a few disconnected mega-graphs) or
+a much larger universe — both future work.
+
+Also recorded: same seed, different device -> different results (GPU seed-0
+static_wf 0.15 OOS Sharpe vs CPU's 1.95; within E7's seed spread). Device
+counts as another draw — one more reason all claims use mean +/- std (C8).
+
+---
+
+## E9 — HP grid by valid IC, winner validated OOS (2026-06-10)
+
+**Protocol (the hygiene point worth a paper paragraph).** HP selection used
+**valid IC only** (the IS-internal, double-embargoed window; `fit` exposes it
+as `model.best_valid_ic_`): 24 configs (lr {5e-4,1e-3,3e-3} x hidden {32,64}
+x heads {2,4} x layers {1,2}) x 3 seeds = 72 train-only runs, static graph,
+IC loss, no OOS metric computed anywhere in the grid. Only the selected
+config then touched the OOS window, once, with fresh seeds. Scripts
+`.scratch/run_hp_grid.py` + `run_winner.py`; artifacts
+`2026-06-10_hp_grid_valid_ic.csv`, `2026-06-10_winner_validation.csv`.
+
+**Grid result.** Winner: **lr=3e-3, hidden=64, heads=2, layers=2** (valid IC
+0.1145 +/- 0.014). The surface is flat on top — six configs within
+0.10-0.115, the default (lr 1e-3, heads 4) ranked 3rd at 0.1097 — and the
+only clear structural signal is **all top-6 configs have 2 layers**: depth
+matters, width/lr/heads barely do.
+
+**Winner OOS validation** (5 seeds x both arms, vs the default config's E7
+numbers in brackets):
+
+| arm | OOS IC | OOS Sharpe | attention value-add |
+|---|---|---|---|
+| single | 0.0102 +/- 0.0179 [-0.0009 +/- 0.0045] | 1.03 +/- 0.84 [0.73 +/- 0.25] | 2.08 +/- 0.84 |
+| walk-forward | **0.0179 +/- 0.0145** [0.0055 +/- 0.0147] | **1.30 +/- 0.73** [1.15 +/- 0.75] | 2.35 +/- 0.73 |
+
+**Findings.**
+
+1. **Valid-IC selection transferred to OOS**: the winner improves mean OOS
+   IC and Sharpe over the default in *both* arms (directionally consistent,
+   though within ~1 std). Positive evidence that the IS-internal valid
+   window is informative — the protocol works, not just in principle.
+2. **Attention value-add is now positive in 20 of 20 runs** (E7's 10 + E9's
+   10; range +0.69 to +3.00 Sharpe). This is the paper's most robust result.
+3. **Walk-forward beats single on the mean in both paired comparisons**
+   (default: 1.15 vs 0.73; winner: 1.30 vs 1.03; and on IC 0.0179 vs
+   0.0102) — two independent config draws agreeing strengthens E7's
+   "directionally helpful", but per-comparison significance at n=5 remains
+   out of reach; keep the qualified wording.
+4. **Current best known setup**: static graph + IC loss + walk-forward +
+   winner HPs -> OOS IC 0.0179 +/- 0.0145, OOS Sharpe 1.30 +/- 0.73, 9-10/10
+   runs positive. Value-added vs the best single (3.07) stays open.
+
+---
+
 ## Next experiments (priority order)
 
-1. **Dynamic per-snapshot graph** — rolling `as_of=t` topology; directly
-   targets the failed Value-added gate and explanation (a) of the
-   valid→OOS decay. Compare static vs dynamic on identical splits.
-2. **Walk-forward retraining** — `graph.training.walk_forward_splits` is
-   already built and tested; targets explanation (b).
-3. **Uniform-mean A/B anchor** — run `UniformMeanPropagator` through the
-   same four gates: is *attention* adding anything over naive neighbour
-   averaging? (The capstone's core A/B; cheap to run.)
-4. **Seed/HP sensitivity** — 5 seeds x {lr, hidden, heads} grid on the real
-   panel; report mean +/- std of OOS IC, not point estimates.
-5. **Attention visualisation (M4)** — `GATPropagator.last_attention`;
-   qualitative story for the paper (which sectors/names attend to whom).
+1. ~~Dynamic per-snapshot graph~~ — **DONE, E6**: implemented
+   (`rolling_topology_for`, `graph="dynamic"`) and rejected by the ablation;
+   static graph stays the default.
+2. ~~Walk-forward retraining~~ — **DONE, E6**: implemented
+   (`walk_forward_composite_series`, `retrain="walk_forward"`) and adopted;
+   it is the main OOS improvement so far.
+3. ~~Uniform-mean A/B anchor~~ — **DONE, E6**: built into every run
+   (`ab_report`); attention value-add is positive in every cell.
+4. ~~Seed sensitivity~~ — **DONE, E7**; ~~HP grid~~ — **DONE, E9**: winner
+   lr=3e-3/hidden=64/heads=2/layers=2 validated OOS; flat surface, depth-2
+   is the only structural requirement.
+5. **Attention visualisation (M4)** — plumbing done
+   (`GATPropagator.last_attention`, head-layer softmax per snapshot, tested);
+   remaining: the qualitative story (which sectors/names attend to whom over
+   time) + a Streamlit "GAT vs Baseline" page.
+6. **Value-added gate variants** — the strict max-of-singles bar is the only
+   open gate; report alongside it the mean-of-singles and
+   marginal-contribution-to-a-multifactor-portfolio readings before
+   concluding the composite adds nothing.
+7. **Significance for the WF-vs-single comparison** — more seeds (n=15-20
+   per arm, cheap on the single arm) or a paired test across seeds, to
+   upgrade "directionally helpful" if it holds.

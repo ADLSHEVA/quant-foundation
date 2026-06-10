@@ -17,6 +17,7 @@ from quant_alpha.models.gat import (
     composite_series,
     fit,
     time_ordered_split,
+    walk_forward_composite_series,
 )
 
 FEATURES = ("f0", "f1", "f2")
@@ -117,6 +118,28 @@ def test_gat_propagator_seam_and_provider() -> None:
     assert result["alpha_gat_composite"].notna().sum() > 0
 
 
+def test_last_attention_exposes_head_layer_softmax() -> None:
+    panel = _panel()
+    topology_for = _topology_for(panel)
+    model = GATModel(GATConfig(in_dim=len(FEATURES), hidden_dim=8, heads=2, dropout=0.0)).eval()
+    propagator = GATPropagator(model=model, feature_cols=FEATURES)
+
+    one_date = panel.index.get_level_values(0)[0]
+    snapshot = panel.xs(one_date, level=0)
+    with pytest.raises(RuntimeError):
+        propagator.last_attention()  # nothing recorded before the first propagate
+
+    propagator.propagate(snapshot, topology_for(one_date))
+    attention = propagator.last_attention()
+
+    assert list(attention.columns) == ["src", "dst", "weight"]
+    entities = set(snapshot.index)
+    assert set(attention["src"]) <= entities and set(attention["dst"]) <= entities
+    # softmax over each node's in-neighbourhood (incl. PyG's self-loop) sums to 1
+    sums = attention.groupby("dst")["weight"].sum()
+    assert np.allclose(sums.to_numpy(), 1.0, atol=1e-5)
+
+
 def test_composite_series_aligns_to_panel_index() -> None:
     panel = _panel()
     ds = FactorGraphDataset(build_sections(panel, _topology_for(panel), FEATURES, k=2))
@@ -128,3 +151,20 @@ def test_composite_series_aligns_to_panel_index() -> None:
     assert composite.index.names == ["date", "symbol"]
     assert set(composite.index) == set(panel.index)
     assert len(composite) == len(panel)
+
+
+def test_walk_forward_composite_covers_every_snapshot_once(tmp_path) -> None:
+    panel = _panel()
+    ds = FactorGraphDataset(build_sections(panel, _topology_for(panel), FEATURES, k=2))
+    cfg = GATConfig(in_dim=len(FEATURES), hidden_dim=8, heads=2, dropout=0.0, forward_k=2, epochs=1)
+    n_is = 25  # 40 snapshots -> folds at 25, 31, 37 with oos_chunk=6
+
+    composite = walk_forward_composite_series(
+        ds, cfg, n_is=n_is, oos_chunk=6, out_path=str(tmp_path / "wf.pt")
+    )
+
+    # full coverage, no duplicates, same index family as the panel
+    assert composite.index.names == ["date", "symbol"]
+    assert not composite.index.duplicated().any()
+    assert set(composite.index) == set(panel.index)
+    assert (tmp_path / "wf.pt").exists()

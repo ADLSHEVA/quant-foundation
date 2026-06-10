@@ -84,7 +84,9 @@ def _fit_and_valid_ic(sections, epochs: int, loss: str, lr: float = 5e-3) -> flo
             ds, cfg, loss_fn=LOSSES[loss], out_path=os.path.join(tmp, "leak.pt"),
             train_idx=train_idx, valid_idx=valid_idx,
         )
-    return evaluate_ic(model, (ds[i] for i in valid_idx), torch.device("cpu"))
+    # follow the trained model's device (fit defaults to cuda when available)
+    device = next(model.parameters()).device
+    return evaluate_ic(model, (ds[i] for i in valid_idx), device)
 
 
 @pytest.mark.parametrize("loss", sorted(LOSSES))

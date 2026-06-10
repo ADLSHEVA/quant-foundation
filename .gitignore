@@ -32,3 +32,9 @@ node_modules/
 # local agent workspaces
 .codegraph/
 .scratch/
+
+# transient experiment weights (canonical gat_equity.pt stays tracked)
+data/warehouse/gat_seed_*.pt
+data/warehouse/gat_bench_*.pt
+data/warehouse/gat_static_*.pt
+data/warehouse/gat_dynamic_*.pt

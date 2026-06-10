@@ -116,11 +116,17 @@ def gat_equity_command(
     offline: bool = typer.Option(True, help="Use deterministic synthetic prices."),
     epochs: int = typer.Option(50, help="GAT training epochs."),
     loss: str = typer.Option("ic", help="Training loss: ic (default) or mse."),
+    graph: str = typer.Option("static", help="Graph mode: static or dynamic (per-snapshot)."),
+    retrain: str = typer.Option("single", help="Fit mode: single or walk-forward."),
+    oos_chunk: int = typer.Option(63, help="Walk-forward refit interval in snapshots."),
 ) -> None:
     """Run the equity GAT relational-factor pipeline (requires the [gnn] extra)."""
     from quant_alpha.run_gat_equity import run_gat_equity
 
-    out = run_gat_equity(config, root.resolve(), offline=offline, epochs=epochs, loss=loss)
+    out = run_gat_equity(
+        config, root.resolve(), offline=offline, epochs=epochs,
+        loss=loss, graph=graph, retrain=retrain, oos_chunk=oos_chunk,
+    )
     gates = out["gate_report"]
     typer.echo("GAT equity pipeline finished.")
     typer.echo(f"Composite OOS IC mean: {gates['composite_oos_ic_mean']:.4f}")
@@ -128,6 +134,7 @@ def gat_equity_command(
     typer.echo(f"Consistency : {gates['consistency']}")
     typer.echo(f"Uniqueness  : {gates['uniqueness']}")
     typer.echo(f"Robustness  : {gates['robustness']}")
+    typer.echo(f"A/B anchor  : {out['ab_report']}")
 
 
 @app.command("bruin-lineage")

@@ -20,6 +20,13 @@ Rolling correlation top-k backbone, optional sector boost, static to start
   highest-correlation peers; a no-op once the universe is large enough.
 - Static first: one graph reused across the window, built from the training
   period only. Per-snapshot / dynamic graphs are a later refinement.
+  **Implemented 2026-06-10** as `rolling_topology_for` (`graph="dynamic"`):
+  the graph is rebuilt as of each snapshot from its own trailing window —
+  point-in-time correct (strictly-before assert per call, so OOS snapshots
+  get fresh graphs that were available at t in deployment); early snapshots
+  without enough history degrade to an edge-free topology. Static remains
+  the default; the 2x2 ablation (static/dynamic x single/walk-forward) is
+  recorded in `docs/gat_experiment_log.md`.
 - Leakage: the correlation window is strictly `[as_of - W, as_of - 1]`, asserted
   in the builder; the static graph uses train data only.
 

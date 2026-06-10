@@ -86,7 +86,9 @@ class UniformMeanPropagator:
                     pool.append(node)
                 pool = [n for n in pool if n in values.index]
                 out[node] = values.reindex(pool).mean() if pool else float("nan")
-            values = pd.Series(out).reindex(node_features.index)
+            # dtype=float keeps an empty topology (no nodes) from producing an
+            # object-dtype all-NaN series that would poison downstream concat
+            values = pd.Series(out, dtype=float).reindex(node_features.index)
         return values
 
 
@@ -102,6 +104,7 @@ class GATPropagator:
 
     model: object  # quant_alpha.models.gat.GATModel in eval mode
     feature_cols: tuple[str, ...]
+    _last_attention: object = None  # pd.DataFrame after the first propagate()
 
     @classmethod
     def from_weights(
@@ -139,10 +142,32 @@ class GATPropagator:
         )
         self.model.eval()  # the seam guarantees deterministic inference (dropout off)
         with torch.no_grad():
-            out = self.model(x, edge_index)
+            if hasattr(self.model, "forward_with_attention"):
+                out, (att_edges, alpha) = self.model.forward_with_attention(x, edge_index)
+                self._last_attention = self._attention_frame(att_edges, alpha, nodes)
+            else:
+                out = self.model(x, edge_index)
         return pd.Series(out.cpu().numpy(), index=node_features.index)
 
-    def last_attention(self) -> pd.DataFrame:
-        raise NotImplementedError(
-            "M4: expose the learned per-edge attention weights for visualisation."
+    @staticmethod
+    def _attention_frame(att_edges, alpha, nodes: list) -> pd.DataFrame:
+        """``(src, dst, weight)`` rows for the head layer's attention, averaged
+        over heads. Includes the self-loops PyG adds, so per-``dst`` weights
+        sum to 1 (softmax over each node's in-neighbourhood)."""
+        src_idx, dst_idx = att_edges.cpu().numpy()
+        weight = alpha.mean(dim=-1).cpu().numpy()
+        return pd.DataFrame(
+            {
+                "src": [nodes[i] for i in src_idx],
+                "dst": [nodes[i] for i in dst_idx],
+                "weight": weight,
+            }
         )
+
+    def last_attention(self) -> pd.DataFrame:
+        """Per-edge attention of the composite-emitting layer from the most
+        recent ``propagate`` call — the M4 visualisation hook (which neighbours
+        each node listened to in that snapshot)."""
+        if self._last_attention is None:
+            raise RuntimeError("No attention recorded yet — call propagate() first.")
+        return self._last_attention

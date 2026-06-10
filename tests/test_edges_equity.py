@@ -3,7 +3,11 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from quant_alpha.graph.edges_equity import build_equity_topology, static_topology_for
+from quant_alpha.graph.edges_equity import (
+    build_equity_topology,
+    rolling_topology_for,
+    static_topology_for,
+)
 
 SECTORS = {
     "A1": "Tech", "A2": "Tech", "A3": "Tech", "A4": "Tech",
@@ -86,3 +90,43 @@ def test_static_topology_for_is_constant() -> None:
     topology_for = static_topology_for(panel, SECTORS, as_of, min_periods=20)
     t0, t1 = panel.index.get_level_values(0)[0], panel.index.get_level_values(0)[-1]
     assert topology_for(t0) is topology_for(t1)
+
+
+def test_rolling_topology_for_rebuilds_per_time_and_caches() -> None:
+    panel = _panel()
+    dates = sorted(panel.index.get_level_values(0).unique())
+    topology_for = rolling_topology_for(panel, SECTORS, min_periods=20)
+
+    # cached: same query time returns the same object
+    assert topology_for(dates[80]) is topology_for(dates[80])
+    # per-time: different query times are built independently and match a
+    # direct build as of that time
+    assert topology_for(dates[40]) is not topology_for(dates[-1])
+    direct = build_equity_topology(panel, SECTORS, as_of=dates[40], min_periods=20)
+    assert topology_for(dates[40]).edges == direct.edges
+
+
+def test_rolling_topology_for_early_dates_degrade_gracefully() -> None:
+    panel = _panel()
+    dates = sorted(panel.index.get_level_values(0).unique())
+    topology_for = rolling_topology_for(panel, SECTORS, min_periods=20)
+
+    # first date: no history at all -> empty, edge-free topology, no crash
+    first = topology_for(dates[0])
+    assert first.edges == ()
+    # below min_periods: nodes exist but correlations are NaN -> no edges
+    early = topology_for(dates[5])
+    assert early.edges == ()
+
+
+def test_rolling_topology_for_no_future_leak() -> None:
+    panel = _panel()
+    dates = sorted(panel.index.get_level_values(0).unique())
+    as_of = dates[80]
+
+    clean = rolling_topology_for(panel, SECTORS, min_periods=20)(as_of)
+    corrupted = panel.copy()
+    corrupted.loc[corrupted.index.get_level_values(0) >= as_of, "ret_1d"] = 999.0
+    poisoned = rolling_topology_for(corrupted, SECTORS, min_periods=20)(as_of)
+
+    assert clean.edges == poisoned.edges

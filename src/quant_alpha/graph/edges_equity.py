@@ -93,3 +93,26 @@ def static_topology_for(
     `as_of` (use the train-period end), ignoring the query time."""
     topology = build_equity_topology(panel, sectors, as_of=as_of, **kwargs)
     return lambda _time: topology
+
+
+def rolling_topology_for(
+    panel: pd.DataFrame,
+    sectors: Mapping[str, str] | None,
+    **kwargs,
+):
+    """A `topology_for` callable that rebuilds the graph as of each query time.
+
+    The dynamic upgrade over `static_topology_for`'s frozen train-period graph:
+    every call uses only data strictly before the query time (asserted in the
+    builder), so OOS snapshots get fresh graphs that are still point-in-time
+    correct — in deployment the trailing correlation window is available at t.
+    Early snapshots without enough history yield an edge-free topology rather
+    than failing. Topologies are cached per timestamp."""
+    cache: dict = {}
+
+    def topology_for(time):
+        if time not in cache:
+            cache[time] = build_equity_topology(panel, sectors, as_of=time, **kwargs)
+        return cache[time]
+
+    return topology_for

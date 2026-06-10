@@ -55,6 +55,19 @@ a negative control (shuffled labels -> valid IC ~ 0) plus a positive control
 (planted signal -> recovered), together arguing the pipeline produces no
 false positives.
 
+## Amendment (2026-06-10): walk-forward OOS scoring
+
+`retrain="walk_forward"` (`walk_forward_composite_series`) refits the model
+at every fold boundary through the OOS window (default every 63 snapshots)
+on all snapshots whose labels predate the boundary — the same
+`is_constrained_split(boundary, embargo=k)` layout as the single fit, so
+each fold's selection valid sits at the end of its own window, embargoed on
+both sides. Every OOS score therefore comes from a model that was trainable
+at that date in deployment. This is an *adaptivity* upgrade, not an honesty
+fix (the single fit was already leak-free); it targets the valid->OOS IC
+decay observed on real data. The first fold's model scores the IS region so
+IS diagnostics stay comparable.
+
 ## Consequences
 
 - The leakage-critical logic — label, splits, rank-IC — is pure pandas in
