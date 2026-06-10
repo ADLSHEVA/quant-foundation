@@ -17,11 +17,13 @@ walk-forward refits) -> composite + no-learning anchors -> four research
 gates + attention A/B, runnable via `quant-alpha gat-equity`. **35
 new-module tests passing.** Split hygiene locked (ADR-0003 amendment);
 leakage controls automated; HP selection used valid IC only and transferred
-to OOS (E9). Headline: **attention value-add over the uniform anchor is
-positive in 20/20 seeded runs**; best known setup (static graph + IC loss +
-walk-forward + lr 3e-3/hidden 64/heads 2/layers 2) reads **OOS IC 0.0179 +/-
-0.0145, OOS Sharpe 1.30 +/- 0.73** over 5 seeds. Value-added (vs best
-single, 3.07) is the one open gate.
+to OOS in the walk-forward arm (E9/E9b, device-deconfounded). Headline:
+**attention value-add over the uniform anchor is positive in 30/30 seeded
+runs**; best known setup (static graph + IC loss + walk-forward + lr
+3e-3/hidden 64/heads 2/layers 2, CPU) reads **OOS IC 0.0148 +/- 0.0043 (5/5
+positive), OOS Sharpe 1.37 +/- 0.39** over 5 seeds; walk-forward-vs-single
+is significant in this config (IC t~3.9). Value-added (vs best single,
+3.07) is the one open gate.
 
 ## Decisions locked (see docs/adr/)
 
@@ -132,9 +134,9 @@ Remaining, in order:
    the one open gate; add mean-of-singles and marginal-contribution-to-a-
    multifactor-portfolio readings before concluding the composite adds
    nothing beyond the best island alpha.
-3. **WF-vs-single significance** — more seeds or a paired-across-seeds test
-   to upgrade "directionally helpful" (consistent in two paired comparisons,
-   E7+E9) into a significance claim, if it holds.
+3. ~~WF-vs-single significance~~ — **reached in the tuned config** (E9b
+   same-device: IC t~3.9, Sharpe t~2.4, n=5/arm; three paired comparisons
+   all favour WF). Optional hardening: more seeds for a tighter interval.
 4. **Platform integration (M5)** — composite into dbt marts; Streamlit
    "GAT vs Baseline" page (now has real content: E6 matrix, E7/E9 seed
    distributions, attention heatmaps).

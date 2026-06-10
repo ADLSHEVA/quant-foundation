@@ -20,13 +20,13 @@ here is not yet supported.
 |---|---|---|---|
 | C1 | The pipeline is leakage-safe and produces no false positives | E1 (synthetic negative control: four gates correctly find nothing on random walks) + E3 (automated shuffle-label negative control AND planted-signal positive control, both losses) + E2 (split protocol: one split date, valid inside IS, embargo both sides) | `tests/test_leakage.py`, ADR-0003 + amendment |
 | C2 | IC loss is the right training objective: it directly optimises the evaluation metric and recovers signal far better than MSE (0.99 vs 0.33 planted-signal IC), at lr 1e-3 | E4 probe table | E4 entry; `LOSSES` in `run_gat_equity.py` |
-| C3 | **Core thesis: learned attention adds value over naive relational propagation.** Same inputs, same topology: GAT beats the uniform-mean anchor in every E6 cell AND in **20/20 seeded runs across two HP configs** (+0.69 to +3.00 OOS Sharpe), with scores near-uncorrelated with the anchor (Spearman -0.29..-0.14) — it learns structure, not smoothing. Both no-learning anchors are negative OOS | E6 (all cells) + E7 + E9 (all seeds) | `2026-06-10_matrix_summary.json`, `..._seed_sensitivity.csv`, `..._winner_validation.csv` |
+| C3 | **Core thesis: learned attention adds value over naive relational propagation.** Same inputs, same topology: GAT beats the uniform-mean anchor in every E6 cell AND in **30/30 seeded runs across two HP configs and two devices** (+0.69 to +3.03 OOS Sharpe), with scores near-uncorrelated with the anchor (Spearman -0.29..-0.14) — it learns structure, not smoothing. Both no-learning anchors are negative OOS | E6 (all cells) + E7 + E9/E9b (all seeds) | `2026-06-10_matrix_summary.json`, `..._seed_sensitivity.csv`, `..._winner_validation_{gpu,cpu}.csv` |
 | C4 | The relational composite is a real, unique, consistent signal: passes Uniqueness (max corr vs singles 0.26) and, with walk-forward, Consistency + Robustness — 3/4 gates | E5, E6 (static_wf) | matrix diagnostics CSVs |
 | C5 | Honest negative: it does not (yet) beat the best single island alpha (the strictest Value-added bar); best config narrows the gap from -2.03 to -1.12 Sharpe while beating 9 of 10 singles | E5, E6 | gate reports in summary JSON |
-| C6 | **Negative result: dynamic per-snapshot correlation graphs hurt** — per-date correlation estimates are noisy; the frozen train-period graph acts as a regulariser. Walk-forward retraining improves the mean in **both** paired comparisons (default config 1.15 vs 0.73; winner config 1.30 vs 1.03 Sharpe; IC likewise) but per-comparison significance at n=5 is out of reach — claim "directionally helpful, consistent across configs" | E6 2x2 ablation + E7 + E9 | E6/E7/E9 entries + artifacts |
+| C6 | **Negative result: dynamic per-snapshot correlation graphs hurt** — per-date correlation estimates are noisy; the frozen train-period graph acts as a regulariser. Walk-forward retraining improves the mean in **all three** paired comparisons and reaches significance in the tuned config (E9b same-device: IC t~3.9, Sharpe t~2.4, n=5/arm) — claim "significant in the tuned config, directionally consistent everywhere" | E6 2x2 ablation + E7 + E9/E9b | E6/E7/E9 entries + artifacts |
 | C7 | Model selection by valid IC matters in practice: valid IC peaked at epoch 32 (0.0756) then decayed to 0.0418 — best-epoch checkpointing nearly doubled deployed valid IC on the first real run | E5 training curve | E5 entry |
 | C8 | Single-seed point estimates are not paper-grade: across 5 seeds OOS Sharpe spans 0.36-1.04 (single) and 0.13-1.95 (WF); same seed on a different device also diverges (E8). All headline numbers are reported as mean +/- std over >= 5 seeds; the long-short Sharpe is far more seed-stable in sign than the rank-IC | E7, E8 | `2026-06-10_seed_sensitivity.csv` |
-| C9 | **The evaluation protocol is self-validating**: HPs selected purely on the IS-internal valid IC transferred to OOS (winner improves mean OOS IC and Sharpe over the default in both arms) — model selection never touched the OOS window, yet found a config that generalises | E9 | `2026-06-10_hp_grid_valid_ic.csv` + `..._winner_validation.csv` |
+| C9 | **The evaluation protocol is self-validating, with nuance**: HPs selected purely on the IS-internal valid IC transferred to OOS in the walk-forward arm (same-device: IC 0.0148 +/- 0.0043 vs default's 0.0055 +/- 0.0147 — 2.7x mean, 1/3 variance) but not in the single arm (a wash). Model selection never touched the OOS window. The initial both-arms read was a device artifact, caught and corrected (E9 correction) | E9 + E9b | `2026-06-10_hp_grid_valid_ic.csv` + `..._winner_validation_{gpu,cpu}.csv` |
 | C10 | The HP surface is flat near the top (six configs within 0.10-0.115 valid IC); the only structural requirement is **2 GAT layers** (all top-6). Results are robust to reasonable HP choices — a robustness point, and a caution against HP-tuning theatre | E9 grid | `2026-06-10_hp_grid_valid_ic.csv` |
 
 **Suggested paper narrative order** (each step cites the rows above):
@@ -336,9 +336,43 @@ comes from **process parallelism** (32 logical cores; ~180s per single run);
 `Batch` packing ~950 snapshots/epoch into a few disconnected mega-graphs) or
 a much larger universe — both future work.
 
-Also recorded: same seed, different device -> different results (GPU seed-0
-static_wf 0.15 OOS Sharpe vs CPU's 1.95; within E7's seed spread). Device
-counts as another draw — one more reason all claims use mean +/- std (C8).
+### CPU vs GPU result divergence — magnitude, mechanism, impact
+
+Same seed (0), same code, same data, different device:
+
+| arm | CPU (OOS IC / Sharpe) | GPU (OOS IC / Sharpe) | CPU 5-seed Sharpe range (E7) |
+|---|---|---|---|
+| static_single | -0.0051 / 1.04 | +0.0056 / 1.35 | 0.36 - 1.04 |
+| static_wf | +0.0200 / 1.95 | -0.0096 / 0.15 | 0.13 - 1.95 |
+
+**Magnitude:** a same-seed device swap can swing the result by the *full
+width of the seed distribution* (the wf row goes from the best CPU draw to
+near the worst). A single run's number is device-dependent.
+
+**Mechanism:** `torch.manual_seed` fixes the initial weights (init happens
+on CPU), but training diverges immediately afterwards: (1) dropout masks
+are drawn from each device's own RNG stream, so the per-step gradients
+differ from step one; (2) GPU parallel reductions round in a different
+order than CPU serial sums, and 1e-7-scale differences are amplified by 50
+epochs of training dynamics. Cross-device same-seed is therefore another
+draw from the same distribution, not the same experiment on new hardware.
+
+**Impact on conclusions: none, given three disciplines already in place.**
+(1) All claims are mean +/- std over >= 5 seeds — device variation behaves
+like one more seed, and both GPU numbers fall inside or at the edge of the
+CPU seed distribution (no evidence of systematic bias). The 20/20
+attention-value-add result is device-insensitive. (2) Within-experiment
+device consistency — **with one slip, caught post-hoc**: E5-E7 and the E9
+grid ran on CPU, but the E9 winner validation silently ran on GPU (`fit`
+auto-selects CUDA, and the CUDA wheel had just been installed). Fixed in
+code the same day: `gat_equity_from_panel` now takes `device="cpu"` as an
+explicit default (`"cuda"`/`"auto"` opt-in), so the documented
+CPU-by-default decision is enforced rather than assumed; the E9 entry
+carries the corresponding correction and a same-device rerun. (3)
+Reproducibility statement for the paper: what is reproducible is the
+*distribution* (given seeds + device class + torch version), not bit-exact
+cross-device point estimates — the latter is unattainable on CUDA in
+principle. Paper runs stay on CPU; the device is recorded per experiment.
 
 ---
 
@@ -351,7 +385,9 @@ x heads {2,4} x layers {1,2}) x 3 seeds = 72 train-only runs, static graph,
 IC loss, no OOS metric computed anywhere in the grid. Only the selected
 config then touched the OOS window, once, with fresh seeds. Scripts
 `.scratch/run_hp_grid.py` + `run_winner.py`; artifacts
-`2026-06-10_hp_grid_valid_ic.csv`, `2026-06-10_winner_validation.csv`.
+`2026-06-10_hp_grid_valid_ic.csv`, `2026-06-10_winner_validation_gpu.csv`
+(the original run — see the device correction below) and
+`..._winner_validation_cpu.csv` (same-device rerun).
 
 **Grid result.** Winner: **lr=3e-3, hidden=64, heads=2, layers=2** (valid IC
 0.1145 +/- 0.014). The surface is flat on top — six configs within
@@ -383,6 +419,44 @@ numbers in brackets):
 4. **Current best known setup**: static graph + IC loss + walk-forward +
    winner HPs -> OOS IC 0.0179 +/- 0.0145, OOS Sharpe 1.30 +/- 0.73, 9-10/10
    runs positive. Value-added vs the best single (3.07) stays open.
+
+**Correction (same day): device confound in the winner-vs-default
+comparison.** The winner validation silently ran on **GPU** (`fit`
+auto-selected CUDA after the E8 wheel swap; the grid had passed CPU
+explicitly). Within-E9 comparisons (single vs WF, all seeds) are
+same-device and unaffected, but the bracketed E7 reference numbers are CPU
+— so finding 1 ("valid-IC selection transferred to OOS") compared across
+devices. Per E8, device behaves like another seed draw with no systematic
+bias, so the directional read likely stands, but it is deconfounded by a
+same-config CPU rerun (appended below). Code fixed so this cannot recur:
+`gat_equity_from_panel(device="cpu")` is now explicit.
+
+**E9b — same-device (CPU) rerun of the winner, 5 seeds
+(2026-06-11, `2026-06-10_winner_validation_cpu.csv`):**
+
+| arm | OOS IC | OOS Sharpe | attention value-add | default (E7, CPU) |
+|---|---|---|---|---|
+| single | -0.0004 +/- 0.0077 | 0.80 +/- 0.35 | 1.86 +/- 0.35 | IC -0.0009, Sharpe 0.73 |
+| walk-forward | **0.0148 +/- 0.0043** | **1.37 +/- 0.39** | 2.42 +/- 0.39 | IC 0.0055, Sharpe 1.15 |
+
+Deconfounded findings (these supersede finding 1 above):
+
+1. **HP transfer is real in the walk-forward arm only.** Same-device,
+   winner-vs-default: the single arm is a wash (0.80 vs 0.73 Sharpe, IC ~0
+   both) — the GPU run's apparent single-arm improvement was a device/seed
+   artifact. In the WF arm the winner is better on the mean AND much
+   tighter: IC 0.0148 +/- 0.0043 vs 0.0055 +/- 0.0147 — a 3x variance
+   reduction with 2.7x the mean.
+2. **Best and most stable result to date: winner + walk-forward on CPU.**
+   All 5 seeds positive on both IC (0.0109-0.0219) and Sharpe (0.98-1.98);
+   the IC mean sits 3.4 std above zero.
+3. **Walk-forward vs single reaches significance within the winner config**:
+   Welch t ~ 3.9 on OOS IC, ~ 2.4 on OOS Sharpe (n=5 per arm). Combined
+   with the two earlier paired comparisons (E7 default config, E9 GPU) both
+   favouring WF, the walk-forward claim upgrades from "directionally
+   helpful" to "significant in the tuned config, consistent everywhere".
+4. Attention value-add: 10/10 positive again — **cumulative 30/30** across
+   three run families (E7, E9-GPU, E9b-CPU).
 
 ---
 

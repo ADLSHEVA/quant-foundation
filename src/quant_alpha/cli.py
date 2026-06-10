@@ -119,13 +119,14 @@ def gat_equity_command(
     graph: str = typer.Option("static", help="Graph mode: static or dynamic (per-snapshot)."),
     retrain: str = typer.Option("single", help="Fit mode: single or walk-forward."),
     oos_chunk: int = typer.Option(63, help="Walk-forward refit interval in snapshots."),
+    device: str = typer.Option("cpu", help="Training device: cpu (default), cuda, or auto."),
 ) -> None:
     """Run the equity GAT relational-factor pipeline (requires the [gnn] extra)."""
     from quant_alpha.run_gat_equity import run_gat_equity
 
     out = run_gat_equity(
         config, root.resolve(), offline=offline, epochs=epochs,
-        loss=loss, graph=graph, retrain=retrain, oos_chunk=oos_chunk,
+        loss=loss, graph=graph, retrain=retrain, oos_chunk=oos_chunk, device=device,
     )
     gates = out["gate_report"]
     typer.echo("GAT equity pipeline finished.")

@@ -157,6 +157,7 @@ def gat_equity_from_panel(
     hidden_dim: int = 64,
     heads: int = 4,
     lr: float = 1e-3,
+    device: str = "cpu",
     out_path: str = "data/warehouse/gat_equity.pt",
 ) -> dict:
     """Graph -> train -> composite -> four gates, given an alpha panel.
@@ -169,7 +170,9 @@ def gat_equity_from_panel(
     bring-up objective, kept for A/B). ``graph`` is ``"static"`` (one graph
     frozen at the split date) or ``"dynamic"`` (rebuilt as of each snapshot).
     ``retrain`` is ``"single"`` (one fit) or ``"walk_forward"`` (refit every
-    ``oos_chunk`` snapshots through the OOS window).
+    ``oos_chunk`` snapshots through the OOS window). ``device`` is ``"cpu"``
+    (default — E8: GPU is slower at this graph size, and a silent device
+    switch makes runs incomparable), ``"cuda"``, or ``"auto"``.
     """
     if loss not in LOSSES:
         raise ValueError(f"loss must be one of {sorted(LOSSES)}, got {loss!r}")
@@ -178,6 +181,11 @@ def gat_equity_from_panel(
     retrain = retrain.replace("-", "_")
     if retrain not in ("single", "walk_forward"):
         raise ValueError(f"retrain must be 'single' or 'walk_forward', got {retrain!r}")
+    if device not in ("cpu", "cuda", "auto"):
+        raise ValueError(f"device must be 'cpu', 'cuda' or 'auto', got {device!r}")
+    import torch  # the module already requires the [gnn] extra
+
+    torch_device = None if device == "auto" else torch.device(device)
     k = k or backtest_cfg.forward_return_days
     feature_cols = tuple(f"{name}_rank" for name in BASE_FACTOR_COLUMNS)
     indexed = panel_flat.set_index(["date", "symbol"]).sort_index()
@@ -207,7 +215,7 @@ def gat_equity_from_panel(
     )
     if retrain == "walk_forward":
         composite = walk_forward_composite_series(
-            dataset, gcfg, n_is=n_is, oos_chunk=oos_chunk,
+            dataset, gcfg, n_is=n_is, oos_chunk=oos_chunk, device=torch_device,
             loss_fn=LOSSES[loss], out_path=out_path, name=COMPOSITE_NAME,
         )
     else:
@@ -218,7 +226,7 @@ def gat_equity_from_panel(
             assert train_idx.stop + k <= valid_idx.start, "train labels reach into valid"
             assert valid_idx.stop + k <= n_is, "valid labels reach into the OOS window"
         model = fit(
-            dataset, gcfg, loss_fn=LOSSES[loss], out_path=out_path,
+            dataset, gcfg, device=torch_device, loss_fn=LOSSES[loss], out_path=out_path,
             train_idx=train_idx, valid_idx=valid_idx,
         )
         composite = composite_series(model, dataset, name=COMPOSITE_NAME)
